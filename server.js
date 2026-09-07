@@ -7,12 +7,12 @@ const app = express();
 app.use(express.json());
 
 // توکن ربات بله
-const TOKEN = "توکن_ربات_بله_اینجا";
+const TOKEN = "788261285:S4-XyqrNtJRAOR-bTDt8u0bbXu0Z2JYEC2g";
 const API = `https://tapi.bale.ai/bot${TOKEN}`;
 
 // اتصال به دیتابیس
 mongoose
-  .connect("YOUR_MONGO_URI")
+  .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.error("Mongo error", err));
 

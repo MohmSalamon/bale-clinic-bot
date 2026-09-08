@@ -1,20 +1,27 @@
 const express = require("express");
-const axios = require("axios");
 const mongoose = require("mongoose");
-const Patient = require("./models/Patient");
-
+const axios = require("axios");
 const app = express();
+
 app.use(express.json());
 
 // توکن ربات بله
-const TOKEN = "788261285:S4-XyqrNtJRAOR-bTDt8u0bbXu0Z2JYEC2g";
-const API = `https://tapi.bale.ai/bot${TOKEN}`;
+const API = "https://tapi.bale.ai/bot788261285:S4-XyqrNtJRAOR-bTDt8u0bbXu0Z2JYEC2g";
 
 // اتصال به دیتابیس
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.error("Mongo error", err));
+
+// مدل Patient
+const PatientSchema = new mongoose.Schema({
+  chatId: { type: String, required: true, unique: true },
+  source: { type: String, default: "bale" },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const Patient = mongoose.model("Patient", PatientSchema);
 
 // ذخیره Chat ID در دیتابیس
 async function saveChatId(chatId) {

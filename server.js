@@ -1,6 +1,7 @@
 const express = require("express");
 const axios = require("axios");
 const mongoose = require("mongoose");
+const jalaali = require("jalaali-js");
 
 const app = express();
 app.use(express.json());
@@ -33,6 +34,14 @@ const UserSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model("User", UserSchema);
+
+// Validate Jalali Date
+function isValidJalali(date) {
+  if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) return false;
+  const [y, m, d] = date.split("/").map(Number);
+  const g = jalaali.toGregorian(y, m, d);
+  return g.gy > 0;
+}
 
 // Send Message
 async function sendMessage(chatId, text) {
@@ -105,31 +114,18 @@ app.post("/webhook", async (req, res) => {
       user.phone = text;
       user.step = 5;
       await user.save();
-
-      await sendMessage(
-        chatId,
-        "لطفاً تاریخ مورد نظر را انتخاب کنید:\n" +
-        "1) 1403/07/15\n" +
-        "2) 1403/07/16\n" +
-        "3) 1403/07/17"
-      );
+      await sendMessage(chatId, "لطفاً تاریخ شمسی را وارد کنید (مثال: 1403/07/15)");
       return res.sendStatus(200);
     }
 
-    // Step 5 → Date
+    // Step 5 → Jalali Date
     if (user.step === 5) {
-      const dates = {
-        "1": "1403/07/15",
-        "2": "1403/07/16",
-        "3": "1403/07/17"
-      };
-
-      if (!dates[text]) {
-        await sendMessage(chatId, "❌ گزینه اشتباه است.\nفقط عدد 1 تا 3 را وارد کنید.");
+      if (!isValidJalali(text)) {
+        await sendMessage(chatId, "❌ تاریخ اشتباه است.\nفرمت صحیح: 1403/07/15");
         return res.sendStatus(200);
       }
 
-      user.date = dates[text];
+      user.date = text;
       user.step = 6;
       await user.save();
 
@@ -195,10 +191,56 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// Access saved data
-app.get("/users", async (req, res) => {
+// Dashboard HTML
+app.get("/dashboard", async (req, res) => {
   const users = await User.find().sort({ createdAt: -1 });
-  res.json(users);
+
+  let html = `
+  <html>
+  <head>
+    <title>Dashboard</title>
+    <style>
+      body { font-family: sans-serif; direction: rtl; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #444; padding: 8px; text-align: center; }
+      th { background: #eee; }
+    </style>
+  </head>
+  <body>
+    <h2>داشبورد نوبت‌ها</h2>
+    <table>
+      <tr>
+        <th>نام</th>
+        <th>نام‌خانوادگی</th>
+        <th>درمانگر</th>
+        <th>شماره</th>
+        <th>تاریخ</th>
+        <th>ساعت</th>
+        <th>ChatID</th>
+      </tr>
+  `;
+
+  users.forEach(u => {
+    html += `
+      <tr>
+        <td>${u.name}</td>
+        <td>${u.family}</td>
+        <td>${u.doctor}</td>
+        <td>${u.phone}</td>
+        <td>${u.date}</td>
+        <td>${u.time}</td>
+        <td>${u.chatId}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+    </table>
+  </body>
+  </html>
+  `;
+
+  res.send(html);
 });
 
 // Start

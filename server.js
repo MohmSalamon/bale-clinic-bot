@@ -22,48 +22,31 @@ mongoose
 // User Schema
 const UserSchema = new mongoose.Schema({
   chatId: String,
-  firstName: String,
-  username: String,
-
-  step: { type: Number, default: 0 },
-
   name: String,
   family: String,
   doctor: String,
   phone: String,
   date: String,
   time: String,
-
+  step: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 
 const User = mongoose.model("User", UserSchema);
 
-// Validation Functions
-function isValidDate(date) {
-  // Format: 1403/07/15
-  return /^\d{4}\/\d{2}\/\d{2}$/.test(date);
-}
-
-function isValidTime(time) {
-  // Format: 10:30 or 18:00
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(time);
-}
-
-// Send Message Function
+// Send Message
 async function sendMessage(chatId, text) {
   try {
     await axios.post(`${API_URL}/sendMessage`, {
       chat_id: chatId,
-      text: text
+      text
     });
-    console.log("Reply Sent ✓");
   } catch (err) {
     console.log("Send Error:", err.response?.data || err);
   }
 }
 
-// Webhook Route
+// Webhook
 app.post("/webhook", async (req, res) => {
   try {
     const message = req.body.message;
@@ -72,34 +55,21 @@ app.post("/webhook", async (req, res) => {
     const chatId = message.chat.id;
     const text = message.text?.trim();
 
-    console.log("Message Received:", text);
-
-    // Load user
     let user = await User.findOne({ chatId });
-
-    // Create user if not exists
-    if (!user) {
-      user = new User({
-        chatId,
-        firstName: message.chat.first_name || "",
-        username: message.chat.username || "",
-        step: 0
-      });
-      await user.save();
-    }
+    if (!user) user = await User.create({ chatId });
 
     // Commands
     if (text === "/start") {
       user.step = 0;
       await user.save();
-      await sendMessage(chatId, "سلام، ربات کلینیک فعال است ✓\nبرای ثبت نوبت، دستور register را ارسال کنید.");
+      await sendMessage(chatId, "سلام، برای ثبت نوبت دستور register را ارسال کنید.");
       return res.sendStatus(200);
     }
 
     if (text.toLowerCase() === "register") {
       user.step = 1;
       await user.save();
-      await sendMessage(chatId, "لطفاً نام خود را وارد کنید:");
+      await sendMessage(chatId, "نام خود را وارد کنید:");
       return res.sendStatus(200);
     }
 
@@ -108,7 +78,7 @@ app.post("/webhook", async (req, res) => {
       user.name = text;
       user.step = 2;
       await user.save();
-      await sendMessage(chatId, "لطفاً نام‌خانوادگی خود را وارد کنید:");
+      await sendMessage(chatId, "نام‌خانوادگی خود را وارد کنید:");
       return res.sendStatus(200);
     }
 
@@ -117,7 +87,7 @@ app.post("/webhook", async (req, res) => {
       user.family = text;
       user.step = 3;
       await user.save();
-      await sendMessage(chatId, "نام درمانگر مورد نظر را وارد کنید:");
+      await sendMessage(chatId, "نام درمانگر را وارد کنید:");
       return res.sendStatus(200);
     }
 
@@ -126,7 +96,7 @@ app.post("/webhook", async (req, res) => {
       user.doctor = text;
       user.step = 4;
       await user.save();
-      await sendMessage(chatId, "لطفاً شماره موبایل خود را وارد کنید:");
+      await sendMessage(chatId, "شماره موبایل را وارد کنید:");
       return res.sendStatus(200);
     }
 
@@ -135,32 +105,72 @@ app.post("/webhook", async (req, res) => {
       user.phone = text;
       user.step = 5;
       await user.save();
-      await sendMessage(chatId, "شماره ثبت شد ✓\nلطفاً تاریخ مورد نظر را وارد کنید (مثال: 1403/07/15)");
+
+      await sendMessage(
+        chatId,
+        "لطفاً تاریخ مورد نظر را انتخاب کنید:\n" +
+        "1) 1403/07/15\n" +
+        "2) 1403/07/16\n" +
+        "3) 1403/07/17"
+      );
       return res.sendStatus(200);
     }
 
-    // Step 5 → Date (with validation)
+    // Step 5 → Date
     if (user.step === 5) {
-      if (!isValidDate(text)) {
-        await sendMessage(chatId, "❌ تاریخ اشتباه است.\nفرمت صحیح: 1403/07/15");
+      const dates = {
+        "1": "1403/07/15",
+        "2": "1403/07/16",
+        "3": "1403/07/17"
+      };
+
+      if (!dates[text]) {
+        await sendMessage(chatId, "❌ گزینه اشتباه است.\nفقط عدد 1 تا 3 را وارد کنید.");
         return res.sendStatus(200);
       }
 
-      user.date = text;
+      user.date = dates[text];
       user.step = 6;
       await user.save();
-      await sendMessage(chatId, "تاریخ ثبت شد ✓\nلطفاً ساعت مورد نظر را وارد کنید (مثال: 10:30 یا 18:00)");
+
+      await sendMessage(
+        chatId,
+        "لطفاً ساعت مورد نظر را انتخاب کنید:\n" +
+        "ساعت‌های صبح:\n" +
+        "1) 09:00\n" +
+        "2) 10:00\n" +
+        "3) 11:00\n" +
+        "4) 12:00\n" +
+        "5) 13:00\n\n" +
+        "ساعت‌های عصر:\n" +
+        "6) 16:00\n" +
+        "7) 17:00\n" +
+        "8) 18:00\n" +
+        "9) 19:00"
+      );
       return res.sendStatus(200);
     }
 
-    // Step 6 → Time (with validation)
+    // Step 6 → Time
     if (user.step === 6) {
-      if (!isValidTime(text)) {
-        await sendMessage(chatId, "❌ ساعت اشتباه است.\nفرمت صحیح: 10:30 یا 18:00");
+      const times = {
+        "1": "09:00",
+        "2": "10:00",
+        "3": "11:00",
+        "4": "12:00",
+        "5": "13:00",
+        "6": "16:00",
+        "7": "17:00",
+        "8": "18:00",
+        "9": "19:00"
+      };
+
+      if (!times[text]) {
+        await sendMessage(chatId, "❌ گزینه اشتباه است.\nفقط عدد 1 تا 9 را وارد کنید.");
         return res.sendStatus(200);
       }
 
-      user.time = text;
+      user.time = times[text];
       user.step = 0;
       await user.save();
 
@@ -171,7 +181,8 @@ app.post("/webhook", async (req, res) => {
 🧑‍⚕️ درمانگر: ${user.doctor}
 📞 شماره: ${user.phone}
 📅 تاریخ: ${user.date}
-⏰ ساعت: ${user.time}`
+⏰ ساعت: ${user.time}
+🆔 چت‌آیدی: ${user.chatId}`
       );
 
       return res.sendStatus(200);
@@ -184,7 +195,13 @@ app.post("/webhook", async (req, res) => {
   }
 });
 
-// Start Server
+// Access saved data
+app.get("/users", async (req, res) => {
+  const users = await User.find().sort({ createdAt: -1 });
+  res.json(users);
+});
+
+// Start
 app.listen(PORT, () => {
   console.log(`Bale bot running on port ${PORT} ✓`);
 });

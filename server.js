@@ -62,7 +62,11 @@ app.post("/webhook", async (req, res) => {
     if (!message) return res.sendStatus(200);
 
     const chatId = message.chat.id;
-    const text = message.text?.trim();
+
+    // اصلاح کامل دریافت متن
+    const text = (message.text || message.body || "").trim().toLowerCase();
+
+    console.log("Message Received:", text);
 
     let user = await User.findOne({ chatId });
     if (!user) user = await User.create({ chatId });
@@ -75,7 +79,7 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
-    if (text.toLowerCase() === "register") {
+    if (text === "register") {
       user.step = 1;
       await user.save();
       await sendMessage(chatId, "نام خود را وارد کنید:");

@@ -1,3 +1,6 @@
+// ✔ dotenv باید اولین خط باشد
+require("dotenv").config();
+
 const express = require("express");
 const axios = require("axios");
 const mongoose = require("mongoose");
@@ -6,8 +9,7 @@ const jalaali = require("jalaali-js");
 const app = express();
 app.use(express.json());
 
-// ENV
-require("dotenv").config();
+// ✔ ENV — حالا مقدارها درست خوانده می‌شوند
 const TOKEN = process.env.TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 3000;
@@ -64,7 +66,7 @@ app.post("/webhook", async (req, res) => {
 
     const chatId = message.chat.id;
 
-    // اصلاح کامل دریافت متن
+    // ✔ اصلاح کامل دریافت متن
     const text = (message.text || message.body || "").trim().toLowerCase();
 
     console.log("Message Received:", text);

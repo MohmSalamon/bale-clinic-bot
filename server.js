@@ -7,6 +7,7 @@ const app = express();
 app.use(express.json());
 
 // ENV
+require("dotenv").config();
 const TOKEN = process.env.TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 3000;

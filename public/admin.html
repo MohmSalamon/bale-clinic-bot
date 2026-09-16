@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8">
+  <title>پنل مدیریت کلینیک</title>
+
+  <style>
+    body {
+      font-family: tahoma;
+      direction: rtl;
+      background: #f5f5f5;
+      padding: 20px;
+    }
+    h2 {
+      color: #333;
+    }
+    .box {
+      background: white;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px #ccc;
+    }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+      margin-bottom: 15px;
+      border-radius: 6px;
+      border: 1px solid #aaa;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      text-align: center;
+    }
+  </style>
+
+  <!-- Persian Datepicker -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/css/persian-datepicker.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/persian-date@1.1.0/dist/persian-date.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/persian-datepicker@1.2.0/dist/js/persian-datepicker.min.js"></script>
+
+</head>
+
+<body>
+
+  <h2>پنل مدیریت کلینیک</h2>
+
+  <!-- ثبت نوبت جدید -->
+  <div class="box">
+    <h3>ثبت نوبت جدید</h3>
+
+    <label>نام و نام‌خانوادگی بیمار:</label>
+    <input id="patientName" placeholder="مثال: علی رضایی">
+
+    <label>تاریخ:</label>
+    <input id="datePicker">
+
+    <label>ساعت:</label>
+    <input id="timePicker" type="time">
+
+    <label>پزشک:</label>
+    <select id="doctor">
+      <option>دکتر الف</option>
+      <option>دکتر ب</option>
+    </select>
+
+    <button onclick="saveAppointment()">ثبت نوبت</button>
+  </div>
+
+  <!-- لیست نوبت‌ها -->
+  <div class="box">
+    <h3>لیست نوبت‌ها</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>بیمار</th>
+          <th>پزشک</th>
+          <th>تاریخ</th>
+          <th>ساعت</th>
+          <th>وضعیت</th>
+        </tr>
+      </thead>
+      <tbody id="appointmentsTable"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // فعال‌سازی تقویم شمسی
+    $("#datePicker").persianDatepicker({
+      format: "YYYY/MM/DD",
+      initialValue: false
+    });
+
+    // ثبت نوبت جدید
+    function saveAppointment() {
+      const data = {
+        patientName: $("#patientName").val(),
+        date: $("#datePicker").val(),
+        time: $("#timePicker").val(),
+        doctor: $("#doctor").val()
+      };
+
+      fetch("/api/appointments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      })
+      .then(res => res.json())
+      .then(r => {
+        alert(r.msg);
+        loadAppointments();
+      });
+    }
+
+    // دریافت لیست نوبت‌ها از دیتابیس
+    function loadAppointments() {
+      fetch("/api/appointments")
+        .then(res => res.json())
+        .then(list => {
+          const table = document.getElementById("appointmentsTable");
+          table.innerHTML = "";
+
+          list.forEach(async appt => {
+            // دریافت اطلاعات بیمار
+            const patient = await fetch(`/api/patient/${appt.patientId}`).then(r => r.json());
+
+            const row = `
+              <tr>
+                <td>${patient.firstName} ${patient.lastName}</td>
+                <td>${appt.doctor}</td>
+                <td>${appt.date}</td>
+                <td>${appt.time}</td>
+                <td>${appt.status}</td>
+              </tr>
+            `;
+            table.innerHTML += row;
+          });
+        });
+    }
+
+    // بارگذاری اولیه
+    loadAppointments();
+  </script>
+
+</body>
+</html>

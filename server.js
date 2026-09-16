@@ -199,6 +199,17 @@ app.post("/webhook", async (req, res) => {
 });
 
 // ===== API برای پنل مدیریت =====
+// ===== API دریافت اطلاعات بیمار =====
+app.get("/api/patient/:id", async (req, res) => {
+  try {
+    const p = await Patient.findById(req.params.id);
+    if (!p) return res.json({ ok: false, msg: "بیمار یافت نشد ❌" });
+    res.json(p);
+  } catch (err) {
+    res.json({ ok: false, msg: "خطا در دریافت اطلاعات بیمار" });
+  }
+});
+
 app.get("/api/appointments", async (req, res) => {
   const list = await Appointment.find().sort({ date: 1, time: 1 });
   res.json(list);

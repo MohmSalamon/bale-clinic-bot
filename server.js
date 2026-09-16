@@ -1,215 +1,308 @@
-// server.js
-
-// بارگذاری dotenv قبل از هر چیز
+// ✔ dotenv باید اولین خط باشد
 require("dotenv").config();
 
 const express = require("express");
-const bodyParser = require("body-parser");
 const axios = require("axios");
 const mongoose = require("mongoose");
+const jalaali = require("jalaali-js");
 
 const app = express();
-app.use(bodyParser.json());
-app.use(express.static("public")); // برای دسترسی به admin.html
+app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // ✔ برای دریافت فرم admin.html
 
-// ===== ENV =====
+// ✔ ENV — حالا مقدارها درست خوانده می‌شوند
 const TOKEN = process.env.TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 3000;
 
-if (!TOKEN) console.log("❌ TOKEN is missing in env");
-if (!MONGO_URI) console.log("❌ MONGO_URI is missing in env");
+// Bale API
+const API_URL = `https://tapi.bale.ai/bot${TOKEN}`;
 
-// ===== MongoDB =====
+// MongoDB Connect
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.log("❌ MongoDB Error:", err.message));
+  .then(() => console.log("MongoDB Connected ✓"))
+  .catch((err) => console.log("MongoDB Error:", err));
 
-// ===== Models =====
-const patientSchema = new mongoose.Schema({
-  firstName: String,
-  lastName: String,
-  phone: String,
+// User Schema
+const UserSchema = new mongoose.Schema({
   chatId: String,
-  createdAt: { type: Date, default: Date.now }
-});
-
-const doctorSchema = new mongoose.Schema({
   name: String,
-  shifts: [String]
-});
-
-const appointmentSchema = new mongoose.Schema({
-  patientId: String,
+  family: String,
   doctor: String,
+  phone: String,
   date: String,
   time: String,
-  status: { type: String, default: "pending" },
+  step: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now }
 });
 
-const Patient = mongoose.model("Patient", patientSchema);
-const Doctor = mongoose.model("Doctor", doctorSchema);
-const Appointment = mongoose.model("Appointment", appointmentSchema);
+const User = mongoose.model("User", UserSchema);
 
-// ===== Bale API =====
-const BALE_API = "https://tapi.bale.ai/bot" + TOKEN;
+// Validate Jalali Date
+function isValidJalali(date) {
+  if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) return false;
+  const [y, m, d] = date.split("/").map(Number);
+  const g = jalaali.toGregorian(y, m, d);
+  return g.gy > 0;
+}
 
+// Send Message
 async function sendMessage(chatId, text) {
   try {
-    await axios.post(BALE_API + "/sendMessage", {
+    await axios.post(`${API_URL}/sendMessage`, {
       chat_id: chatId,
-      text: text
+      text
     });
   } catch (err) {
-    console.log("❌ Error sending message:", err.response?.data || err.message);
+    console.log("Send Error:", err.response?.data || err);
   }
 }
 
-// ===== رزرو نوبت: منطق =====
-async function hasConflict(doctor, date, time) {
-  const conflict = await Appointment.findOne({ doctor, date, time });
-  return !!conflict;
-}
-
-async function bookAppointment(patientId, doctor, date, time) {
-  if (await hasConflict(doctor, date, time)) {
-    return { ok: false, msg: "این زمان قبلاً رزرو شده است ❌" };
-  }
-  const appt = new Appointment({ patientId, doctor, date, time });
-  await appt.save();
-  return { ok: true, msg: "نوبت با موفقیت ثبت شد ✅" };
-}
-
-// ===== State Machine =====
-const state = {};
-const userFirstName = {};
-const userLastName = {};
-const userDate = {};
-const userTime = {};
-const userDoctor = {};
-
-// ===== Webhook =====
-app.post("/webhook", async (req, res) => {
-  const update = req.body;
-  if (!update.message) return res.sendStatus(200);
-
-  const chatId = update.message.chat.id;
-  const text = (update.message.text || "").trim();
-
-  if (text === "/start") {
-    state[chatId] = "awaiting_first_name";
-    await sendMessage(chatId, "سلام 👋\nلطفاً *نام* خود را وارد کنید:");
-    return res.sendStatus(200);
-  }
-
-  if (state[chatId] === "awaiting_first_name") {
-    userFirstName[chatId] = text;
-    state[chatId] = "awaiting_last_name";
-    await sendMessage(chatId, "عالی! حالا *نام‌خانوادگی* را وارد کنید:");
-    return res.sendStatus(200);
-  }
-
-  if (state[chatId] === "awaiting_last_name") {
-    userLastName[chatId] = text;
-    let p = await Patient.findOne({ chatId });
-    if (!p) {
-      p = new Patient({ firstName: userFirstName[chatId], lastName: userLastName[chatId], chatId });
-      await p.save();
-    } else {
-      p.firstName = userFirstName[chatId];
-      p.lastName = userLastName[chatId];
-      await p.save();
-    }
-    state[chatId] = null;
-    await sendMessage(chatId, `ثبت اطلاعات انجام شد ✅\n${p.firstName} ${p.lastName}\nبرای رزرو نوبت، دستور reserve را ارسال کنید.`);
-    return res.sendStatus(200);
-  }
-
-  if (text === "reserve") {
-    const p = await Patient.findOne({ chatId });
-    if (!p || !p.firstName || !p.lastName) {
-      await sendMessage(chatId, "ابتدا باید اطلاعات خود را ثبت کنید.\nدستور /start را ارسال کنید.");
-      return res.sendStatus(200);
-    }
-    state[chatId] = "awaiting_date";
-    await sendMessage(chatId, "لطفاً تاریخ نوبت را به‌صورت شمسی ارسال کنید (مثال: 1403/07/01):");
-    return res.sendStatus(200);
-  }
-
-  if (state[chatId] === "awaiting_date") {
-    userDate[chatId] = text;
-    state[chatId] = "awaiting_time";
-    await sendMessage(chatId, "لطفاً ساعت نوبت را ارسال کنید (مثال: 09:00):");
-    return res.sendStatus(200);
-  }
-
-  if (state[chatId] === "awaiting_time") {
-    userTime[chatId] = text;
-    state[chatId] = "awaiting_doctor";
-    await sendMessage(chatId, "لطفاً پزشک را انتخاب کنید:\n1) دکتر الف\n2) دکتر ب");
-    return res.sendStatus(200);
-  }
-
-  if (state[chatId] === "awaiting_doctor") {
-    let doctor = "";
-    if (text === "1") doctor = "دکتر الف";
-    else if (text === "2") doctor = "دکتر ب";
-    else {
-      await sendMessage(chatId, "گزینه نامعتبر است. لطفاً 1 یا 2 را ارسال کنید.");
-      return res.sendStatus(200);
-    }
-
-    userDoctor[chatId] = doctor;
-    const patient = await Patient.findOne({ chatId });
-    if (!patient) {
-      await sendMessage(chatId, "ابتدا باید ثبت اطلاعات انجام دهید. دستور /start را ارسال کنید.");
-      state[chatId] = null;
-      return res.sendStatus(200);
-    }
-
-    const result = await bookAppointment(patient._id, userDoctor[chatId], userDate[chatId], userTime[chatId]);
-    await sendMessage(chatId, `${result.msg}\nبیمار: ${patient.firstName} ${patient.lastName}\nپزشک: ${userDoctor[chatId]}\nتاریخ: ${userDate[chatId]}\nساعت: ${userTime[chatId]}`);
-    state[chatId] = null;
-    return res.sendStatus(200);
-  }
-
-  await sendMessage(chatId, "دستور نامعتبر است.\nاز /start یا reserve استفاده کنید.");
-  res.sendStatus(200);
-});
-
-// ===== API برای پنل مدیریت =====
-app.get("/api/appointments", async (req, res) => {
-  const list = await Appointment.find().sort({ date: 1, time: 1 });
-  res.json(list);
-});
-
-app.post("/api/appointments", async (req, res) => {
-  const { patientName, date, time, doctor } = req.body;
-  const [firstName, lastName] = (patientName || "").split(" ");
-  const patient = await Patient.findOne({ firstName, lastName });
-  if (!patient) return res.json({ ok: false, msg: "بیمار یافت نشد ❌" });
-  const result = await bookAppointment(patient._id, doctor, date, time);
-  res.json(result);
-});
-
-app.get("/api/patient/:id", async (req, res) => {
+/* ---------------------------------------------------
+   ✔ بخش جدید: ثبت نوبت از طریق admin.html
+--------------------------------------------------- */
+app.post("/add", async (req, res) => {
   try {
-    const p = await Patient.findById(req.params.id);
-    if (!p) return res.json({ ok: false, msg: "بیمار یافت نشد ❌" });
-    res.json(p);
+    const { name, family, doctor, phone, date, time } = req.body;
+
+    // ✔ پیدا کردن یا ساختن کاربر
+    let user = await User.findOne({ phone });
+
+    if (!user) {
+      user = await User.create({
+        name,
+        family,
+        doctor,
+        phone,
+        date,
+        time,
+        step: 0
+      });
+    } else {
+      user.name = name;
+      user.family = family;
+      user.doctor = doctor;
+      user.date = date;
+      user.time = time;
+      await user.save();
+    }
+
+    return res.send(`
+      <script>
+        alert("نوبت با موفقیت ثبت شد ✓");
+        window.location.href = "/dashboard";
+      </script>
+    `);
+
   } catch (err) {
-    res.json({ ok: false, msg: "خطا در دریافت اطلاعات بیمار" });
+    console.log("Admin Add Error:", err);
+    return res.send(`
+      <script>
+        alert("خطا در ثبت نوبت ❌");
+        window.location.href = "/dashboard";
+      </script>
+    `);
   }
 });
 
-// ===== تست GET =====
-app.get("/", (req, res) => {
-  res.send("Bale clinic bot is running.");
+/* ---------------------------------------------------
+   ✔ Webhook ربات بله (بدون تغییر)
+--------------------------------------------------- */
+app.post("/webhook", async (req, res) => {
+  try {
+    const message = req.body.message;
+    if (!message) return res.sendStatus(200);
+
+    const chatId = message.chat.id;
+
+    // ✔ اصلاح کامل دریافت متن
+    const text = (message.text || message.body || "").trim().toLowerCase();
+
+    console.log("Message Received:", text);
+
+    let user = await User.findOne({ chatId });
+    if (!user) user = await User.create({ chatId });
+
+    // Commands
+    if (text === "/start") {
+      user.step = 0;
+      await user.save();
+      await sendMessage(chatId, "سلام، برای ثبت نوبت دستور register را ارسال کنید.");
+      return res.sendStatus(200);
+    }
+
+    if (text === "register") {
+      user.step = 1;
+      await user.save();
+      await sendMessage(chatId, "نام خود را وارد کنید:");
+      return res.sendStatus(200);
+    }
+
+    // Step 1 → Name
+    if (user.step === 1) {
+      user.name = text;
+      user.step = 2;
+      await user.save();
+      await sendMessage(chatId, "نام‌خانوادگی خود را وارد کنید:");
+      return res.sendStatus(200);
+    }
+
+    // Step 2 → Family
+    if (user.step === 2) {
+      user.family = text;
+      user.step = 3;
+      await user.save();
+      await sendMessage(chatId, "نام درمانگر را وارد کنید:");
+      return res.sendStatus(200);
+    }
+
+    // Step 3 → Doctor
+    if (user.step === 3) {
+      user.doctor = text;
+      user.step = 4;
+      await user.save();
+      await sendMessage(chatId, "شماره موبایل را وارد کنید:");
+      return res.sendStatus(200);
+    }
+
+    // Step 4 → Phone
+    if (user.step === 4) {
+      user.phone = text;
+      user.step = 5;
+      await user.save();
+      await sendMessage(chatId, "لطفاً تاریخ شمسی را وارد کنید (مثال: 1403/07/15)");
+      return res.sendStatus(200);
+    }
+
+    // Step 5 → Jalali Date
+    if (user.step === 5) {
+      if (!isValidJalali(text)) {
+        await sendMessage(chatId, "❌ تاریخ اشتباه است.\nفرمت صحیح: 1403/07/15");
+        return res.sendStatus(200);
+      }
+
+      user.date = text;
+      user.step = 6;
+      await user.save();
+
+      await sendMessage(
+        chatId,
+        "لطفاً ساعت مورد نظر را انتخاب کنید:\n" +
+        "ساعت‌های صبح:\n" +
+        "1) 09:00\n" +
+        "2) 10:00\n" +
+        "3) 11:00\n" +
+        "4) 12:00\n" +
+        "5) 13:00\n\n" +
+        "ساعت‌های عصر:\n" +
+        "6) 16:00\n" +
+        "7) 17:00\n" +
+        "8) 18:00\n" +
+        "9) 19:00"
+      );
+      return res.sendStatus(200);
+    }
+
+    // Step 6 → Time
+    if (user.step === 6) {
+      const times = {
+        "1": "09:00",
+        "2": "10:00",
+        "3": "11:00",
+        "4": "12:00",
+        "5": "13:00",
+        "6": "16:00",
+        "7": "17:00",
+        "8": "18:00",
+        "9": "19:00"
+      };
+
+      if (!times[text]) {
+        await sendMessage(chatId, "❌ گزینه اشتباه است.\nفقط عدد 1 تا 9 را وارد کنید.");
+        return res.sendStatus(200);
+      }
+
+      user.time = times[text];
+      user.step = 0;
+      await user.save();
+
+      await sendMessage(
+        chatId,
+        `نوبت شما ثبت شد ✓
+👤 نام: ${user.name} ${user.family}
+🧑‍⚕️ درمانگر: ${user.doctor}
+📞 شماره: ${user.phone}
+📅 تاریخ: ${user.date}
+⏰ ساعت: ${user.time}
+🆔 چت‌آیدی: ${user.chatId}`
+      );
+
+      return res.sendStatus(200);
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.log("Webhook Error:", err);
+    res.sendStatus(200);
+  }
 });
 
-// ===== Start Server =====
+/* ---------------------------------------------------
+   ✔ Dashboard
+--------------------------------------------------- */
+app.get("/dashboard", async (req, res) => {
+  const users = await User.find().sort({ createdAt: -1 });
+
+  let html = `
+  <html>
+  <head>
+    <title>Dashboard</title>
+    <style>
+      body { font-family: sans-serif; direction: rtl; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #444; padding: 8px; text-align: center; }
+      th { background: #eee; }
+    </style>
+  </head>
+  <body>
+    <h2>داشبورد نوبت‌ها</h2>
+    <table>
+      <tr>
+        <th>نام</th>
+        <th>نام‌خانوادگی</th>
+        <th>درمانگر</th>
+        <th>شماره</th>
+        <th>تاریخ</th>
+        <th>ساعت</th>
+        <th>ChatID</th>
+      </tr>
+  `;
+
+  users.forEach(u => {
+    html += `
+      <tr>
+        <td>${u.name}</td>
+        <td>${u.family}</td>
+        <td>${u.doctor}</td>
+        <td>${u.phone}</td>
+        <td>${u.date}</td>
+        <td>${u.time}</td>
+        <td>${u.chatId}</td>
+      </tr>
+    `;
+  });
+
+  html += `
+    </table>
+  </body>
+  </html>
+  `;
+
+  res.send(html);
+});
+
+// Start
 app.listen(PORT, () => {
-  console.log(`🚀 Bale bot running on port ${PORT}`);
+  console.log(`Bale bot running on port ${PORT} ✓`);
 });

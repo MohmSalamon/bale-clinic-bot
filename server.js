@@ -1,5 +1,8 @@
 // server.js
 
+// بارگذاری dotenv قبل از هر چیز
+require("dotenv").config();
+
 const express = require("express");
 const bodyParser = require("body-parser");
 const axios = require("axios");
@@ -7,6 +10,7 @@ const mongoose = require("mongoose");
 
 const app = express();
 app.use(bodyParser.json());
+app.use(express.static("public")); // برای دسترسی به admin.html
 
 // ===== ENV =====
 const TOKEN = process.env.TOKEN;
@@ -94,7 +98,6 @@ app.post("/webhook", async (req, res) => {
   const chatId = update.message.chat.id;
   const text = (update.message.text || "").trim();
 
-  // ===== /start =====
   if (text === "/start") {
     state[chatId] = "awaiting_first_name";
     await sendMessage(chatId, "سلام 👋\nلطفاً *نام* خود را وارد کنید:");
@@ -191,7 +194,6 @@ app.post("/api/appointments", async (req, res) => {
   res.json(result);
 });
 
-// ===== مسیر جدید: دریافت اطلاعات بیمار =====
 app.get("/api/patient/:id", async (req, res) => {
   try {
     const p = await Patient.findById(req.params.id);

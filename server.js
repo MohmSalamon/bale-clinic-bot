@@ -1,17 +1,15 @@
 // ✔ dotenv باید اولین خط باشد
-// rebuild test
 require("dotenv").config();
 
 const express = require("express");
 const axios = require("axios");
 const mongoose = require("mongoose");
-const jalaali = require("jalaali-js");
 
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: true })); // ✔ برای دریافت فرم admin.html
+app.use(express.urlencoded({ extended: true }));
 
-// ✔ ENV — حالا مقدارها درست خوانده می‌شوند
+// ENV
 const TOKEN = process.env.TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 3000;
@@ -40,14 +38,6 @@ const UserSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", UserSchema);
 
-// Validate Jalali Date
-function isValidJalali(date) {
-  if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) return false;
-  const [y, m, d] = date.split("/").map(Number);
-  const g = jalaali.toGregorian(y, m, d);
-  return g.gy > 0;
-}
-
 // Send Message
 async function sendMessage(chatId, text) {
   try {
@@ -61,66 +51,115 @@ async function sendMessage(chatId, text) {
 }
 
 /* ---------------------------------------------------
-   ✔ بخش جدید: ثبت نوبت از طریق admin.html
---------------------------------------------------- */
-app.post("/add", async (req, res) => {
-  try {
-    const { name, family, doctor, phone, date, time } = req.body;
-
-    // ✔ پیدا کردن یا ساختن کاربر
-    let user = await User.findOne({ phone });
-
-    if (!user) {
-      user = await User.create({
-        name,
-        family,
-        doctor,
-        phone,
-        date,
-        time,
-        step: 0
-      });
-    } else {
-      user.name = name;
-      user.family = family;
-      user.doctor = doctor;
-      user.date = date;
-      user.time = time;
-      await user.save();
-    }
-
-    return res.send(`
-      <script>
-        alert("نوبت با موفقیت ثبت شد ✓");
-        window.location.href = "/dashboard";
-      </script>
-    `);
-
-  } catch (err) {
-    console.log("Admin Add Error:", err);
-    return res.send(`
-      <script>
-        alert("خطا در ثبت نوبت ❌");
-        window.location.href = "/dashboard";
-      </script>
-    `);
-  }
-});
-
-/* ---------------------------------------------------
-   ✔ Webhook ربات بله (بدون تغییر)
+   ✔ Webhook ربات بله
 --------------------------------------------------- */
 app.post("/webhook", async (req, res) => {
   try {
+    // پیام معمولی
     const message = req.body.message;
+
+    // پیام دکمه (callback)
+    const callback = req.body.callback_query;
+
+    /* ---------------------------------------------------
+       ✔ دریافت دکمه‌های تقویم آبشاری
+    --------------------------------------------------- */
+    if (callback) {
+      const data = callback.data;
+      const chatId = callback.message.chat.id;
+
+      let user = await User.findOne({ chatId });
+
+      /* ✔ انتخاب سال */
+      if (data.startsWith("year_")) {
+        const year = data.replace("year_", "");
+        user.date = year;
+        user.step = 51;
+        await user.save();
+
+        await axios.post(`${API_URL}/sendMessage`, {
+          chat_id: chatId,
+          text: "ماه را انتخاب کنید:",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "01", callback_data: "month_01" },
+                { text: "02", callback_data: "month_02" },
+                { text: "03", callback_data: "month_03" }
+              ],
+              [
+                { text: "04", callback_data: "month_04" },
+                { text: "05", callback_data: "month_05" },
+                { text: "06", callback_data: "month_06" }
+              ],
+              [
+                { text: "07", callback_data: "month_07" },
+                { text: "08", callback_data: "month_08" },
+                { text: "09", callback_data: "month_09" }
+              ],
+              [
+                { text: "10", callback_data: "month_10" },
+                { text: "11", callback_data: "month_11" },
+                { text: "12", callback_data: "month_12" }
+              ]
+            ]
+          }
+        });
+
+        return res.sendStatus(200);
+      }
+
+      /* ✔ انتخاب ماه */
+      if (data.startsWith("month_")) {
+        const month = data.replace("month_", "");
+        user.date = `${user.date}/${month}`;
+        user.step = 52;
+        await user.save();
+
+        // ساخت دکمه‌های روز 01 تا 31
+        const days = [];
+        for (let i = 1; i <= 31; i++) {
+          days.push({
+            text: i.toString().padStart(2, "0"),
+            callback_data: `day_${i.toString().padStart(2, "0")}`
+          });
+        }
+
+        // تبدیل به ردیف‌های 7تایی
+        const rows = [];
+        while (days.length) rows.push(days.splice(0, 7));
+
+        await axios.post(`${API_URL}/sendMessage`, {
+          chat_id: chatId,
+          text: "روز را انتخاب کنید:",
+          reply_markup: { inline_keyboard: rows }
+        });
+
+        return res.sendStatus(200);
+      }
+
+      /* ✔ انتخاب روز */
+      if (data.startsWith("day_")) {
+        const day = data.replace("day_", "");
+        user.date = `${user.date}/${day}`;
+        user.step = 6;
+        await user.save();
+
+        await sendMessage(chatId, `تاریخ انتخاب شد: ${user.date}\nلطفاً ساعت را انتخاب کنید:`);
+
+        return res.sendStatus(200);
+      }
+
+      return res.sendStatus(200);
+    }
+
+    /* ---------------------------------------------------
+       ✔ پیام‌های معمولی
+    --------------------------------------------------- */
     if (!message) return res.sendStatus(200);
 
     const chatId = message.chat.id;
-
-    // ✔ اصلاح کامل دریافت متن
-    const text = (message.text || message.body || "").trim().toLowerCase();
-
-    console.log("Message Received:", text);
+    const text = (message.text || "").trim();
 
     let user = await User.findOne({ chatId });
     if (!user) user = await User.create({ chatId });
@@ -172,36 +211,27 @@ app.post("/webhook", async (req, res) => {
       user.phone = text;
       user.step = 5;
       await user.save();
-      await sendMessage(chatId, "لطفاً تاریخ شمسی را وارد کنید (مثال: 1403/07/15)");
-      return res.sendStatus(200);
-    }
 
-    // Step 5 → Jalali Date
-    if (user.step === 5) {
-      if (!isValidJalali(text)) {
-        await sendMessage(chatId, "❌ تاریخ اشتباه است.\nفرمت صحیح: 1403/07/15");
-        return res.sendStatus(200);
-      }
+      // ✔ نمایش سال‌های 1405 تا 1410
+      await axios.post(`${API_URL}/sendMessage`, {
+        chat_id: chatId,
+        text: "سال را انتخاب کنید:",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "1405", callback_data: "year_1405" },
+              { text: "1406", callback_data: "year_1406" },
+              { text: "1407", callback_data: "year_1407" }
+            ],
+            [
+              { text: "1408", callback_data: "year_1408" },
+              { text: "1409", callback_data: "year_1409" },
+              { text: "1410", callback_data: "year_1410" }
+            ]
+          ]
+        }
+      });
 
-      user.date = text;
-      user.step = 6;
-      await user.save();
-
-      await sendMessage(
-        chatId,
-        "لطفاً ساعت مورد نظر را انتخاب کنید:\n" +
-        "ساعت‌های صبح:\n" +
-        "1) 09:00\n" +
-        "2) 10:00\n" +
-        "3) 11:00\n" +
-        "4) 12:00\n" +
-        "5) 13:00\n\n" +
-        "ساعت‌های عصر:\n" +
-        "6) 16:00\n" +
-        "7) 17:00\n" +
-        "8) 18:00\n" +
-        "9) 19:00"
-      );
       return res.sendStatus(200);
     }
 

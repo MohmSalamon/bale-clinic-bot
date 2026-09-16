@@ -1,256 +1,121 @@
-// ✔ dotenv باید اولین خط باشد
-require("dotenv").config();
+// server.js
 
-const express = require("express");
-const axios = require("axios");
+// فقط در حالت لوکال از .env بخوان
+if (!process.env.RAILWAY_ENVIRONMENT) {
+  require("dotenv").config();
+}
+
 const mongoose = require("mongoose");
-const jalaali = require("jalaali-js");
+const express = require("express");
+const bodyParser = require("body-parser");
+const axios = require("axios");
 
 const app = express();
-app.use(express.json());
+app.use(bodyParser.json());
 
-// ✔ ENV — حالا مقدارها درست خوانده می‌شوند
+// متغیرها از env (Railway Variables)
 const TOKEN = process.env.TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
 const PORT = process.env.PORT || 3000;
 
-// Bale API
-const API_URL = `https://tapi.bale.ai/bot${TOKEN}`;
+// چک اولیه روی env
+if (!TOKEN) {
+  console.log("❌ TOKEN تعریف نشده است (env خالی است)");
+}
+if (!MONGO_URI) {
+  console.log("❌ MONGO_URI تعریف نشده است (env خالی است)");
+}
 
-// MongoDB Connect
+// اتصال به MongoDB با لاگ واضح
 mongoose
   .connect(MONGO_URI)
-  .then(() => console.log("MongoDB Connected ✓"))
-  .catch((err) => console.log("MongoDB Error:", err));
-
-// User Schema
-const UserSchema = new mongoose.Schema({
-  chatId: String,
-  name: String,
-  family: String,
-  doctor: String,
-  phone: String,
-  date: String,
-  time: String,
-  step: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const User = mongoose.model("User", UserSchema);
-
-// Validate Jalali Date
-function isValidJalali(date) {
-  if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) return false;
-  const [y, m, d] = date.split("/").map(Number);
-  const g = jalaali.toGregorian(y, m, d);
-  return g.gy > 0;
-}
-
-// Send Message
-async function sendMessage(chatId, text) {
-  try {
-    await axios.post(`${API_URL}/sendMessage`, {
-      chat_id: chatId,
-      text
-    });
-  } catch (err) {
-    console.log("Send Error:", err.response?.data || err);
-  }
-}
-
-// Webhook
-app.post("/webhook", async (req, res) => {
-  try {
-    const message = req.body.message;
-    if (!message) return res.sendStatus(200);
-
-    const chatId = message.chat.id;
-
-    // ✔ اصلاح کامل دریافت متن
-    const text = (message.text || message.body || "").trim().toLowerCase();
-
-    console.log("Message Received:", text);
-
-    let user = await User.findOne({ chatId });
-    if (!user) user = await User.create({ chatId });
-
-    // Commands
-    if (text === "/start") {
-      user.step = 0;
-      await user.save();
-      await sendMessage(chatId, "سلام، برای ثبت نوبت دستور register را ارسال کنید.");
-      return res.sendStatus(200);
-    }
-
-    if (text === "register") {
-      user.step = 1;
-      await user.save();
-      await sendMessage(chatId, "نام خود را وارد کنید:");
-      return res.sendStatus(200);
-    }
-
-    // Step 1 → Name
-    if (user.step === 1) {
-      user.name = text;
-      user.step = 2;
-      await user.save();
-      await sendMessage(chatId, "نام‌خانوادگی خود را وارد کنید:");
-      return res.sendStatus(200);
-    }
-
-    // Step 2 → Family
-    if (user.step === 2) {
-      user.family = text;
-      user.step = 3;
-      await user.save();
-      await sendMessage(chatId, "نام درمانگر را وارد کنید:");
-      return res.sendStatus(200);
-    }
-
-    // Step 3 → Doctor
-    if (user.step === 3) {
-      user.doctor = text;
-      user.step = 4;
-      await user.save();
-      await sendMessage(chatId, "شماره موبایل را وارد کنید:");
-      return res.sendStatus(200);
-    }
-
-    // Step 4 → Phone
-    if (user.step === 4) {
-      user.phone = text;
-      user.step = 5;
-      await user.save();
-      await sendMessage(chatId, "لطفاً تاریخ شمسی را وارد کنید (مثال: 1403/07/15)");
-      return res.sendStatus(200);
-    }
-
-    // Step 5 → Jalali Date
-    if (user.step === 5) {
-      if (!isValidJalali(text)) {
-        await sendMessage(chatId, "❌ تاریخ اشتباه است.\nفرمت صحیح: 1403/07/15");
-        return res.sendStatus(200);
-      }
-
-      user.date = text;
-      user.step = 6;
-      await user.save();
-
-      await sendMessage(
-        chatId,
-        "لطفاً ساعت مورد نظر را انتخاب کنید:\n" +
-        "ساعت‌های صبح:\n" +
-        "1) 09:00\n" +
-        "2) 10:00\n" +
-        "3) 11:00\n" +
-        "4) 12:00\n" +
-        "5) 13:00\n\n" +
-        "ساعت‌های عصر:\n" +
-        "6) 16:00\n" +
-        "7) 17:00\n" +
-        "8) 18:00\n" +
-        "9) 19:00"
-      );
-      return res.sendStatus(200);
-    }
-
-    // Step 6 → Time
-    if (user.step === 6) {
-      const times = {
-        "1": "09:00",
-        "2": "10:00",
-        "3": "11:00",
-        "4": "12:00",
-        "5": "13:00",
-        "6": "16:00",
-        "7": "17:00",
-        "8": "18:00",
-        "9": "19:00"
-      };
-
-      if (!times[text]) {
-        await sendMessage(chatId, "❌ گزینه اشتباه است.\nفقط عدد 1 تا 9 را وارد کنید.");
-        return res.sendStatus(200);
-      }
-
-      user.time = times[text];
-      user.step = 0;
-      await user.save();
-
-      await sendMessage(
-        chatId,
-        `نوبت شما ثبت شد ✓
-👤 نام: ${user.name} ${user.family}
-🧑‍⚕️ درمانگر: ${user.doctor}
-📞 شماره: ${user.phone}
-📅 تاریخ: ${user.date}
-⏰ ساعت: ${user.time}
-🆔 چت‌آیدی: ${user.chatId}`
-      );
-
-      return res.sendStatus(200);
-    }
-
-    res.sendStatus(200);
-  } catch (err) {
-    console.log("Webhook Error:", err);
-    res.sendStatus(200);
-  }
-});
-
-// Dashboard HTML
-app.get("/dashboard", async (req, res) => {
-  const users = await User.find().sort({ createdAt: -1 });
-
-  let html = `
-  <html>
-  <head>
-    <title>Dashboard</title>
-    <style>
-      body { font-family: sans-serif; direction: rtl; }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { border: 1px solid #444; padding: 8px; text-align: center; }
-      th { background: #eee; }
-    </style>
-  </head>
-  <body>
-    <h2>داشبورد نوبت‌ها</h2>
-    <table>
-      <tr>
-        <th>نام</th>
-        <th>نام‌خانوادگی</th>
-        <th>درمانگر</th>
-        <th>شماره</th>
-        <th>تاریخ</th>
-        <th>ساعت</th>
-        <th>ChatID</th>
-      </tr>
-  `;
-
-  users.forEach(u => {
-    html += `
-      <tr>
-        <td>${u.name}</td>
-        <td>${u.family}</td>
-        <td>${u.doctor}</td>
-        <td>${u.phone}</td>
-        <td>${u.date}</td>
-        <td>${u.time}</td>
-        <td>${u.chatId}</td>
-      </tr>
-    `;
+  .then(() => {
+    console.log("✅ MongoDB Connected");
+  })
+  .catch((err) => {
+    console.log("❌ MongoDB Connection Error:");
+    console.log(err);
   });
 
-  html += `
-    </table>
-  </body>
-  </html>
-  `;
-
-  res.send(html);
+// یک مدل ساده برای تست
+const userSchema = new mongoose.Schema({
+  chatId: String,
+  name: String,
+  createdAt: { type: Date, default: Date.now },
 });
 
-// Start
+const User = mongoose.model("User", userSchema);
+
+// آدرس API بله
+const BALE_API = "https://tapi.bale.ai/bot" + TOKEN;
+
+// تابع ارسال پیام به بله
+async function sendMessage(chatId, text) {
+  try {
+    await axios.post(BALE_API + "/sendMessage", {
+      chat_id: chatId,
+      text: text,
+    });
+  } catch (err) {
+    console.log("❌ Error sending message to Bale:");
+    console.log(err.response?.data || err.message);
+  }
+}
+
+// وبهوک اصلی بله
+app.post("/webhook", async (req, res) => {
+  try {
+    const update = req.body;
+
+    if (!update || !update.message) {
+      return res.sendStatus(200);
+    }
+
+    const msg = update.message;
+    const chatId = msg.chat?.id;
+    const text = msg.text?.trim();
+
+    console.log("📩 New message:", text, "from", chatId);
+
+    if (!chatId || !text) {
+      return res.sendStatus(200);
+    }
+
+    // دستور /start
+    if (text === "/start") {
+      await sendMessage(
+        chatId,
+        "سلام، برای ثبت نوبت دستور register را ارسال کنید."
+      );
+      return res.sendStatus(200);
+    }
+
+    // دستور register
+    if (text.toLowerCase() === "register") {
+      // فقط یک تست ساده روی دیتابیس
+      const user = new User({ chatId });
+      await user.save();
+
+      await sendMessage(chatId, "ثبت اولیه انجام شد ✅");
+      return res.sendStatus(200);
+    }
+
+    // سایر پیام‌ها
+    await sendMessage(chatId, "دستور نامعتبر است. /start را ارسال کنید.");
+    return res.sendStatus(200);
+  } catch (err) {
+    console.log("❌ Error in /webhook handler:");
+    console.log(err);
+    return res.sendStatus(500);
+  }
+});
+
+// روت ساده برای تست
+app.get("/", (req, res) => {
+  res.send("Bale clinic bot is running.");
+});
+
+// اجرای سرور
 app.listen(PORT, () => {
-  console.log(`Bale bot running on port ${PORT} ✓`);
+  console.log(`🚀 Bale bot running on port ${PORT}`);
 });

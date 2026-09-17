@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+<meta charset="UTF-8">
+<title>تست دیتابیس</title>
+<style>
+  body { font-family: sans-serif; direction: rtl; background: #f0f2f5; padding: 20px; }
+  h2 { text-align: center; margin-bottom: 20px; }
+  pre { background: #fff; padding: 15px; border: 1px solid #ccc; border-radius: 6px; overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<h2>خروجی تست دیتابیس</h2>
+<p>این صفحه داده‌های مسیر <code>/test-db</code> را نمایش می‌دهد.</p>
+
+<pre id="output">در حال بارگذاری...</pre>
+
+<script>
+  fetch("/test-db")
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+    })
+    .catch(err => {
+      document.getElementById("output").textContent = "خطا در دریافت داده‌ها: " + err;
+    });
+</script>
+
+</body>
+</html>

@@ -296,7 +296,8 @@ app.post("/webhook", async (req, res) => {
 /* ---------------------------------------------------
    ✔ Dashboard
 --------------------------------------------------- */
-  app.get("/dashboard", async (req, res) => {
+// Dashboard
+app.get("/dashboard", async (req, res) => {
   try {
     const users = await User.find().sort({ createdAt: -1 });
 
@@ -326,15 +327,23 @@ app.post("/webhook", async (req, res) => {
     res.send("خطا در دریافت داده‌ها");
   }
 });
+
+// Delete
 app.delete("/delete/:id", async (req, res) => {
   await User.findByIdAndDelete(req.params.id);
   res.sendStatus(200);
 });
+
+// Edit
 app.put("/edit/:id", async (req, res) => {
   await User.findByIdAndUpdate(req.params.id, req.body);
   res.sendStatus(200);
 });
 
+// Start server
+app.listen(PORT, () => {
+  console.log(`Bale bot running on port ${PORT} ✓`);
+});
 
 // Start
 app.listen(PORT, () => {

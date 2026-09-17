@@ -63,13 +63,24 @@ app.post("/webhook", async (req, res) => {
     const callback = req.body.callback_query;
 
     /* ---------------------------------------------------
-       ✔ دریافت دکمه‌های تقویم آبشاری
+       ✔ دریافت دکمه‌های تقویم آبشاری + درمانگر
     --------------------------------------------------- */
     if (callback) {
       const data = callback.data;
       const chatId = callback.message.chat.id;
 
       let user = await User.findOne({ chatId });
+
+      /* ✔ انتخاب درمانگر */
+      if (data.startsWith("doctor_")) {
+        const doctorName = data.replace("doctor_", "");
+        user.doctor = doctorName;
+        user.step = 4;
+        await user.save();
+
+        await sendMessage(chatId, "شماره موبایل را وارد کنید:");
+        return res.sendStatus(200);
+      }
 
       /* ✔ انتخاب سال */
       if (data.startsWith("year_")) {
@@ -203,20 +214,21 @@ app.post("/webhook", async (req, res) => {
     if (!message) return res.sendStatus(200);
 
     const chatId = message.chat.id;
-    const text = (message.text || "").trim();
+    const text = (message.text || "").trim().toLowerCase();
 
     let user = await User.findOne({ chatId });
     if (!user) user = await User.create({ chatId });
 
-    // Commands
-    if (text === "/start") {
+    // ✔ انواع start
+    if (["/start", "start", "شروع"].includes(text)) {
       user.step = 0;
       await user.save();
       await sendMessage(chatId, "سلام، برای ثبت نوبت دستور register را ارسال کنید.");
       return res.sendStatus(200);
     }
 
-    if (text === "register") {
+    // ✔ انواع register
+    if (["register", "reg", "ثبت", "ثبت‌نام"].includes(text)) {
       user.step = 1;
       await user.save();
       await sendMessage(chatId, "نام خود را وارد کنید:");
@@ -247,17 +259,6 @@ app.post("/webhook", async (req, res) => {
         reply_markup: { inline_keyboard: keyboard }
       });
 
-      return res.sendStatus(200);
-    }
-
-    // Step 3 → Doctor
-    if (data?.startsWith("doctor_")) {
-      const doctorName = data.replace("doctor_", "");
-      user.doctor = doctorName;
-      user.step = 4;
-      await user.save();
-
-      await sendMessage(chatId, "شماره موبایل را وارد کنید:");
       return res.sendStatus(200);
     }
 

@@ -297,29 +297,44 @@ app.post("/webhook", async (req, res) => {
    ✔ Dashboard
 --------------------------------------------------- */
   app.get("/dashboard", async (req, res) => {
-  const users = await User.find().sort({ createdAt: -1 });
+  try {
+    const users = await User.find().sort({ createdAt: -1 });
 
-  let rows = "";
+    let rows = "";
+    users.forEach(u => {
+      rows += `
+        <tr>
+          <td>${u.name}</td>
+          <td>${u.family}</td>
+          <td>${u.doctor}</td>
+          <td>${u.phone}</td>
+          <td>${u.date}</td>
+          <td>${u.time}</td>
+          <td>${u.chatId}</td>
+          <td>
+            <button class="btn btn-edit" onclick="editRow('${u._id}')">ویرایش</button>
+            <button class="btn btn-delete" onclick="deleteRow('${u._id}')">حذف</button>
+          </td>
+        </tr>
+      `;
+    });
 
-  users.forEach(u => {
-    rows += `
-      <tr>
-        <td>${u.name}</td>
-        <td>${u.family}</td>
-        <td>${u.doctor}</td>
-        <td>${u.phone}</td>
-        <td>${u.date}</td>
-        <td>${u.time}</td>
-        <td>${u.chatId}</td>
-      </tr>
-    `;
-  });
-
-  const html = fs.readFileSync("admin.html", "utf8").replace("{{DATA}}", rows);
-
-  res.send(html);
+    const html = fs.readFileSync("public/admin.html", "utf8").replace("{{DATA}}", rows);
+    res.send(html);
+  } catch (err) {
+    console.log("Dashboard Error:", err);
+    res.send("خطا در دریافت داده‌ها");
+  }
 });
-  
+app.delete("/delete/:id", async (req, res) => {
+  await User.findByIdAndDelete(req.params.id);
+  res.sendStatus(200);
+});
+app.put("/edit/:id", async (req, res) => {
+  await User.findByIdAndUpdate(req.params.id, req.body);
+  res.sendStatus(200);
+});
+
 
 // Start
 app.listen(PORT, () => {

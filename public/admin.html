@@ -3,58 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <title>داشبورد نوبت‌ها</title>
-
 <style>
-  body {
-    font-family: sans-serif;
-    direction: rtl;
-    background: #f0f2f5;
-    padding: 20px;
-  }
-
-  h2 {
-    text-align: center;
-    margin-bottom: 20px;
-  }
-
-  .toolbar {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-  }
-
-  input, select {
-    padding: 10px;
-    border: 1px solid #aaa;
-    border-radius: 6px;
-    font-size: 14px;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    border-radius: 8px;
-    overflow: hidden;
-  }
-
-  th, td {
-    border: 1px solid #ddd;
-    padding: 12px;
-    text-align: center;
-  }
-
-  th {
-    background: #eaeaea;
-    cursor: pointer;
-  }
-
-  tr:nth-child(even) {
-    background: #fafafa;
-  }
+  body { font-family: sans-serif; direction: rtl; background: #f0f2f5; padding: 20px; }
+  h2 { text-align: center; margin-bottom: 20px; }
+  .toolbar { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  input, select, button { padding: 8px; border: 1px solid #aaa; border-radius: 6px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+  th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+  th { background: #eaeaea; cursor: pointer; }
+  tr:nth-child(even) { background: #fafafa; }
+  .btn { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; }
+  .btn-edit { background: #ffc107; color: #000; }
+  .btn-delete { background: #dc3545; color: #fff; }
 </style>
-
 </head>
 <body>
 
@@ -62,10 +23,10 @@
 
 <div class="toolbar">
   <input type="text" id="search" placeholder="جستجو نام یا شماره...">
-  <select id="doctorFilter">
-    <option value="">همه درمانگران</option>
-  </select>
-  <input type="date" id="dateFilter">
+  <select id="doctorFilter"><option value="">همه درمانگران</option></select>
+  <input type="date" id="dateFrom">
+  <input type="date" id="dateTo">
+  <button onclick="filterTable()">اعمال فیلتر</button>
 </div>
 
 <table id="appointments">
@@ -78,24 +39,25 @@
       <th data-sort="date">تاریخ</th>
       <th data-sort="time">ساعت</th>
       <th>ChatID</th>
+      <th>عملیات</th>
     </tr>
   </thead>
-
   <tbody>
     {{DATA}}
   </tbody>
 </table>
 
+<script src="https://cdn.jsdelivr.net/npm/persian-date/dist/persian-date.js"></script>
 <script>
   const searchInput = document.getElementById("search");
   const doctorFilter = document.getElementById("doctorFilter");
-  const dateFilter = document.getElementById("dateFilter");
+  const dateFrom = document.getElementById("dateFrom");
+  const dateTo = document.getElementById("dateTo");
   const table = document.getElementById("appointments").getElementsByTagName("tbody")[0];
 
   // استخراج درمانگران از جدول
   const doctors = new Set();
   [...table.rows].forEach(row => doctors.add(row.cells[2].innerText));
-
   doctors.forEach(d => {
     const opt = document.createElement("option");
     opt.value = d;
@@ -103,44 +65,68 @@
     doctorFilter.appendChild(opt);
   });
 
+  // تبدیل تاریخ میلادی به شمسی
+  [...table.rows].forEach(row => {
+    const gDate = new Date(row.cells[4].innerText);
+    if (!isNaN(gDate)) {
+      row.cells[4].innerText = new persianDate(gDate).format("YYYY/MM/DD");
+    }
+  });
+
   function filterTable() {
     const search = searchInput.value.toLowerCase();
     const doctor = doctorFilter.value;
-    const date = dateFilter.value;
+    const from = dateFrom.value ? new Date(dateFrom.value) : null;
+    const to = dateTo.value ? new Date(dateTo.value) : null;
 
     [...table.rows].forEach(row => {
       const name = row.cells[0].innerText.toLowerCase();
       const phone = row.cells[3].innerText.toLowerCase();
       const doc = row.cells[2].innerText;
-      const rowDate = row.cells[4].innerText;
+      const rowDateStr = row.cells[4].innerText;
+      const rowDate = new persianDate(rowDateStr).toDate();
 
       const matchSearch = name.includes(search) || phone.includes(search);
       const matchDoctor = doctor === "" || doc === doctor;
-      const matchDate = date === "" || rowDate === date.replace(/-/g, "/");
+      const matchFrom = !from || rowDate >= from;
+      const matchTo = !to || rowDate <= to;
 
-      row.style.display = (matchSearch && matchDoctor && matchDate) ? "" : "none";
+      row.style.display = (matchSearch && matchDoctor && matchFrom && matchTo) ? "" : "none";
     });
   }
 
   searchInput.oninput = filterTable;
   doctorFilter.onchange = filterTable;
-  dateFilter.onchange = filterTable;
 
   // مرتب‌سازی جدول
   document.querySelectorAll("th[data-sort]").forEach(th => {
     th.addEventListener("click", () => {
-      const key = th.dataset.sort;
       const rows = [...table.rows];
-
       rows.sort((a, b) => {
-        const A = a.querySelector(`td:nth-child(${th.cellIndex + 1})`).innerText;
-        const B = b.querySelector(`td:nth-child(${th.cellIndex + 1})`).innerText;
+        const A = a.cells[th.cellIndex].innerText;
+        const B = b.cells[th.cellIndex].innerText;
         return A.localeCompare(B, "fa");
       });
-
       rows.forEach(r => table.appendChild(r));
     });
   });
+
+  // عملیات حذف و ویرایش
+  function deleteRow(id) {
+    fetch(`/delete/${id}`, { method: "DELETE" })
+      .then(() => location.reload());
+  }
+
+  function editRow(id) {
+    const newPhone = prompt("شماره جدید را وارد کنید:");
+    if (newPhone) {
+      fetch(`/edit/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: newPhone })
+      }).then(() => location.reload());
+    }
+  }
 </script>
 
 </body>

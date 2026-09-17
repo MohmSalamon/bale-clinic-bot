@@ -4,6 +4,7 @@ require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
 const mongoose = require("mongoose");
+const fs = require("fs");
 
 const app = express();
 app.use(express.json());
@@ -16,6 +17,9 @@ const PORT = process.env.PORT || 3000;
 
 // Bale API
 const API_URL = `https://tapi.bale.ai/bot${TOKEN}`;
+
+// Load doctors list from JSON file
+const doctors = JSON.parse(fs.readFileSync("doctors.json", "utf8")).doctors;
 
 // MongoDB Connect
 mongoose
@@ -117,8 +121,9 @@ app.post("/webhook", async (req, res) => {
           });
         }
 
+        // ✔ تقویم ۷ ستونه
         const rows = [];
-        while (days.length) rows.push(days.splice(0, 5));
+        while (days.length) rows.push(days.splice(0, 7));
 
         await axios.post(`${API_URL}/sendMessage`, {
           chat_id: chatId,
@@ -136,18 +141,24 @@ app.post("/webhook", async (req, res) => {
         user.step = 6;
         await user.save();
 
+        // ✔ ساعت‌ها خوانا (۲ ردیف صبح + ۱ ردیف عصر)
         await axios.post(`${API_URL}/sendMessage`, {
           chat_id: chatId,
           text: "ساعت را انتخاب کنید:",
           reply_markup: {
             inline_keyboard: [
+              // صبح
               [
                 { text: "09:00", callback_data: "time_09:00" },
                 { text: "10:00", callback_data: "time_10:00" },
-                { text: "11:00", callback_data: "time_11:00" },
+                { text: "11:00", callback_data: "time_11:00" }
+              ],
+              [
                 { text: "12:00", callback_data: "time_12:00" },
                 { text: "13:00", callback_data: "time_13:00" }
               ],
+
+              // عصر
               [
                 { text: "16:00", callback_data: "time_16:00" },
                 { text: "17:00", callback_data: "time_17:00" },
@@ -226,15 +237,26 @@ app.post("/webhook", async (req, res) => {
       user.family = text;
       user.step = 3;
       await user.save();
-      await sendMessage(chatId, "نام درمانگر را وارد کنید:");
+
+      // ✔ نمایش درمانگران از فایل JSON
+      let keyboard = doctors.map(d => [{ text: d, callback_data: `doctor_${d}` }]);
+
+      await axios.post(`${API_URL}/sendMessage`, {
+        chat_id: chatId,
+        text: "درمانگر را انتخاب کنید:",
+        reply_markup: { inline_keyboard: keyboard }
+      });
+
       return res.sendStatus(200);
     }
 
     // Step 3 → Doctor
-    if (user.step === 3) {
-      user.doctor = text;
+    if (data?.startsWith("doctor_")) {
+      const doctorName = data.replace("doctor_", "");
+      user.doctor = doctorName;
       user.step = 4;
       await user.save();
+
       await sendMessage(chatId, "شماره موبایل را وارد کنید:");
       return res.sendStatus(200);
     }

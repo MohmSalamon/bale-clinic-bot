@@ -10,7 +10,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
-
 // ENV
 const TOKEN = process.env.TOKEN;
 const MONGO_URI = process.env.MONGO_URI;
@@ -294,8 +293,9 @@ app.post("/webhook", async (req, res) => {
 });
 
 /* ---------------------------------------------------
-   ✔ Dashboard
+   ✔ Dashboard + Delete + Edit + Test DB
 --------------------------------------------------- */
+
 // Dashboard
 app.get("/dashboard", async (req, res) => {
   try {
@@ -330,22 +330,38 @@ app.get("/dashboard", async (req, res) => {
 
 // Delete
 app.delete("/delete/:id", async (req, res) => {
-  await User.findByIdAndDelete(req.params.id);
-  res.sendStatus(200);
+  try {
+    await User.findByIdAndDelete(req.params.id);
+    res.sendStatus(200);
+  } catch (err) {
+    console.log("Delete Error:", err);
+    res.sendStatus(500);
+  }
 });
 
 // Edit
 app.put("/edit/:id", async (req, res) => {
-  await User.findByIdAndUpdate(req.params.id, req.body);
-  res.sendStatus(200);
+  try {
+    await User.findByIdAndUpdate(req.params.id, req.body);
+    res.sendStatus(200);
+  } catch (err) {
+    console.log("Edit Error:", err);
+    res.sendStatus(500);
+  }
+});
+
+// Test DB
+app.get("/test-db", async (req, res) => {
+  try {
+    const users = await User.find().limit(5);
+    res.json(users);
+  } catch (err) {
+    console.log("Test DB Error:", err);
+    res.send("خطا در اتصال به دیتابیس");
+  }
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`Bale bot running on port ${PORT} ✓`);
-});
-
-// Start
 app.listen(PORT, () => {
   console.log(`Bale bot running on port ${PORT} ✓`);
 });

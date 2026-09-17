@@ -295,36 +295,13 @@ app.post("/webhook", async (req, res) => {
 /* ---------------------------------------------------
    ✔ Dashboard
 --------------------------------------------------- */
-app.get("/dashboard", async (req, res) => {
+  app.get("/dashboard", async (req, res) => {
   const users = await User.find().sort({ createdAt: -1 });
 
-  let html = `
-  <html>
-  <head>
-    <title>Dashboard</title>
-    <style>
-      body { font-family: sans-serif; direction: rtl; }
-      table { width: 100%; border-collapse: collapse; }
-      th, td { border: 1px solid #444; padding: 8px; text-align: center; }
-      th { background: #eee; }
-    </style>
-  </head>
-  <body>
-    <h2>داشبورد نوبت‌ها</h2>
-    <table>
-      <tr>
-        <th>نام</th>
-        <th>نام‌خانوادگی</th>
-        <th>درمانگر</th>
-        <th>شماره</th>
-        <th>تاریخ</th>
-        <th>ساعت</th>
-        <th>ChatID</th>
-      </tr>
-  `;
+  let rows = "";
 
   users.forEach(u => {
-    html += `
+    rows += `
       <tr>
         <td>${u.name}</td>
         <td>${u.family}</td>
@@ -337,14 +314,11 @@ app.get("/dashboard", async (req, res) => {
     `;
   });
 
-  html += `
-    </table>
-  </body>
-  </html>
-  `;
+  const html = fs.readFileSync("admin.html", "utf8").replace("{{DATA}}", rows);
 
   res.send(html);
 });
+  
 
 // Start
 app.listen(PORT, () => {

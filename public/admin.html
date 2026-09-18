@@ -2,131 +2,279 @@
 <html lang="fa">
 <head>
 <meta charset="UTF-8">
-<title>داشبورد نوبت‌ها</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>داشبورد نوبت‌ها - نسخهٔ پیشرفته</title>
+
 <style>
-  body { font-family: sans-serif; direction: rtl; background: #f0f2f5; padding: 20px; }
-  h2 { text-align: center; margin-bottom: 20px; }
-  .toolbar { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-  input, select, button { padding: 8px; border: 1px solid #aaa; border-radius: 6px; font-size: 14px; }
-  table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
-  th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
-  th { background: #eaeaea; cursor: pointer; }
-  tr:nth-child(even) { background: #fafafa; }
-  .btn { padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; }
-  .btn-edit { background: #ffc107; color: #000; }
-  .btn-delete { background: #dc3545; color: #fff; }
+    body {
+        font-family: sans-serif;
+        background: #f5f5f5;
+        margin: 0;
+        padding: 20px;
+        direction: rtl;
+        text-align: right;
+    }
+
+    .container {
+        max-width: 1200px;
+        margin: auto;
+    }
+
+    h2 {
+        margin-bottom: 20px;
+    }
+
+    .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 20px;
+    }
+
+    .filters input, .filters select {
+        padding: 10px;
+        border-radius: 6px;
+        border: 1px solid #ccc;
+        min-width: 180px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    th, td {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        font-size: 14px;
+    }
+
+    th {
+        background: #2ecc71;
+        color: white;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
+    tr:hover {
+        background: #f9f9f9;
+    }
+
+    .btn {
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        border: none;
+        color: white;
+        font-size: 12px;
+        margin: 0 2px;
+    }
+
+    .btn-delete {
+        background: #e74c3c;
+    }
+
+    .btn-edit {
+        background: #3498db;
+    }
+
+    @media (max-width: 768px) {
+        table, thead, tbody, th, td, tr {
+            display: block;
+        }
+
+        thead {
+            display: none;
+        }
+
+        tr {
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 8px;
+            padding: 8px;
+        }
+
+        td {
+            border: none;
+            padding: 4px 0;
+        }
+
+        td::before {
+            content: attr(data-label);
+            font-weight: bold;
+            margin-left: 5px;
+            color: #555;
+        }
+    }
 </style>
 </head>
 <body>
 
-<h2>داشبورد نوبت‌های ثبت‌شده</h2>
+<div class="container">
+    <h2>داشبورد نوبت‌های ثبت‌شده (نسخهٔ پیشرفته)</h2>
 
-<div class="toolbar">
-  <input type="text" id="search" placeholder="جستجو نام یا شماره...">
-  <select id="doctorFilter"><option value="">همه درمانگران</option></select>
-  <input type="date" id="dateFrom">
-  <input type="date" id="dateTo">
-  <button onclick="filterTable()">اعمال فیلتر</button>
+    <!-- فیلترها -->
+    <div class="filters">
+        <input type="text" id="search" placeholder="جستجو نام، نام‌خانوادگی، شماره یا درمانگر...">
+        <select id="doctorFilter">
+            <option value="">همه درمانگران</option>
+        </select>
+        <input type="date" id="dateFilter">
+    </div>
+
+    <!-- جدول -->
+    <table id="dataTable">
+        <thead>
+            <tr>
+                <th data-sort="name">نام</th>
+                <th data-sort="family">نام‌خانوادگی</th>
+                <th data-sort="doctor">درمانگر</th>
+                <th data-sort="phone">شماره</th>
+                <th data-sort="date">تاریخ</th>
+                <th data-sort="time">ساعت</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+
+        <tbody id="tableBody">
+            {{DATA}}
+        </tbody>
+    </table>
 </div>
 
-<table id="appointments">
-  <thead>
-    <tr>
-      <th data-sort="name">نام</th>
-      <th data-sort="family">نام‌خانوادگی</th>
-      <th data-sort="doctor">درمانگر</th>
-      <th data-sort="phone">شماره</th>
-      <th data-sort="date">تاریخ</th>
-      <th data-sort="time">ساعت</th>
-      <th>ChatID</th>
-      <th>عملیات</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{DATA}}
-  </tbody>
-</table>
-
-<script src="https://cdn.jsdelivr.net/npm/persian-date/dist/persian-date.js"></script>
 <script>
-  const searchInput = document.getElementById("search");
-  const doctorFilter = document.getElementById("doctorFilter");
-  const dateFrom = document.getElementById("dateFrom");
-  const dateTo = document.getElementById("dateTo");
-  const table = document.getElementById("appointments").getElementsByTagName("tbody")[0];
-
-  // استخراج درمانگران از جدول
-  const doctors = new Set();
-  [...table.rows].forEach(row => doctors.add(row.cells[2].innerText));
-  doctors.forEach(d => {
-    const opt = document.createElement("option");
-    opt.value = d;
-    opt.innerText = d;
-    doctorFilter.appendChild(opt);
-  });
-
-  // تبدیل تاریخ میلادی به شمسی
-  [...table.rows].forEach(row => {
-    const gDate = new Date(row.cells[4].innerText);
-    if (!isNaN(gDate)) {
-      row.cells[4].innerText = new persianDate(gDate).format("YYYY/MM/DD");
-    }
-  });
-
-  function filterTable() {
-    const search = searchInput.value.toLowerCase();
-    const doctor = doctorFilter.value;
-    const from = dateFrom.value ? new Date(dateFrom.value) : null;
-    const to = dateTo.value ? new Date(dateTo.value) : null;
-
-    [...table.rows].forEach(row => {
-      const name = row.cells[0].innerText.toLowerCase();
-      const phone = row.cells[3].innerText.toLowerCase();
-      const doc = row.cells[2].innerText;
-      const rowDateStr = row.cells[4].innerText;
-      const rowDate = new persianDate(rowDateStr).toDate();
-
-      const matchSearch = name.includes(search) || phone.includes(search);
-      const matchDoctor = doctor === "" || doc === doctor;
-      const matchFrom = !from || rowDate >= from;
-      const matchTo = !to || rowDate <= to;
-
-      row.style.display = (matchSearch && matchDoctor && matchFrom && matchTo) ? "" : "none";
+    // تبدیل ردیف‌ها به آبجکت برای فیلتر و مرتب‌سازی
+    const body = document.getElementById("tableBody");
+    const rows = [...body.querySelectorAll("tr")].map(tr => {
+        const tds = tr.querySelectorAll("td");
+        return {
+            element: tr,
+            id: tr.getAttribute("data-id"),
+            name: tds[0]?.innerText || "",
+            family: tds[1]?.innerText || "",
+            doctor: tds[2]?.innerText || "",
+            phone: tds[3]?.innerText || "",
+            date: tds[4]?.innerText || "",
+            time: tds[5]?.innerText || ""
+        };
     });
-  }
 
-  searchInput.oninput = filterTable;
-  doctorFilter.onchange = filterTable;
-
-  // مرتب‌سازی جدول
-  document.querySelectorAll("th[data-sort]").forEach(th => {
-    th.addEventListener("click", () => {
-      const rows = [...table.rows];
-      rows.sort((a, b) => {
-        const A = a.cells[th.cellIndex].innerText;
-        const B = b.cells[th.cellIndex].innerText;
-        return A.localeCompare(B, "fa");
-      });
-      rows.forEach(r => table.appendChild(r));
+    // پر کردن فیلتر درمانگر
+    const doctorSet = new Set(rows.map(r => r.doctor).filter(Boolean));
+    const doctorFilter = document.getElementById("doctorFilter");
+    doctorSet.forEach(doc => {
+        const opt = document.createElement("option");
+        opt.value = doc;
+        opt.innerText = doc;
+        doctorFilter.appendChild(opt);
     });
-  });
 
-  // عملیات حذف و ویرایش
-  function deleteRow(id) {
-    fetch(`/delete/${id}`, { method: "DELETE" })
-      .then(() => location.reload());
-  }
+    const searchInput = document.getElementById("search");
+    const dateFilter = document.getElementById("dateFilter");
 
-  function editRow(id) {
-    const newPhone = prompt("شماره جدید را وارد کنید:");
-    if (newPhone) {
-      fetch(`/edit/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: newPhone })
-      }).then(() => location.reload());
+    function applyFilters() {
+        const search = searchInput.value.trim();
+        const doctor = doctorFilter.value;
+        const date = dateFilter.value;
+
+        rows.forEach(r => {
+            let show = true;
+
+            if (search) {
+                const s = search;
+                if (
+                    !r.name.includes(s) &&
+                    !r.family.includes(s) &&
+                    !r.phone.includes(s) &&
+                    !r.doctor.includes(s)
+                ) {
+                    show = false;
+                }
+            }
+
+            if (doctor && r.doctor !== doctor) {
+                show = false;
+            }
+
+            if (date && r.date !== date) {
+                show = false;
+            }
+
+            r.element.style.display = show ? "" : "none";
+        });
     }
-  }
+
+    searchInput.addEventListener("input", applyFilters);
+    doctorFilter.addEventListener("change", applyFilters);
+    dateFilter.addEventListener("change", applyFilters);
+
+    // مرتب‌سازی ستون‌ها
+    document.querySelectorAll("th[data-sort]").forEach(th => {
+        th.addEventListener("click", () => {
+            const key = th.dataset.sort;
+            const asc = !th.classList.contains("asc");
+            document.querySelectorAll("th[data-sort]").forEach(h => h.classList.remove("asc", "desc"));
+            th.classList.add(asc ? "asc" : "desc");
+
+            rows.sort((a, b) => {
+                const va = a[key] || "";
+                const vb = b[key] || "";
+                return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+            });
+
+            rows.forEach(r => body.appendChild(r.element));
+        });
+    });
+
+    // دکمه‌های حذف و ویرایش
+    function deleteRow(id) {
+        if (!confirm("آیا از حذف این نوبت مطمئن هستید؟")) return;
+
+        fetch(`/delete/${id}`, { method: "DELETE" })
+            .then(res => res.json())
+            .then(data => {
+                if (data.ok) {
+                    document.querySelector(`tr[data-id="${id}"]`).remove();
+                } else {
+                    alert("خطا در حذف رکورد");
+                }
+            });
+    }
+
+    function editRow(id) {
+        const newTime = prompt("ساعت جدید را وارد کنید:");
+        if (!newTime) return;
+
+        fetch(`/edit/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ time: newTime })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.ok) {
+                document.querySelector(`tr[data-id="${id}"] td:nth-child(6)`).innerText = newTime;
+            } else {
+                alert("خطا در ویرایش رکورد");
+            }
+        });
+    }
+
+    // موبایل: اضافه کردن data-label
+    function applyMobileLabels() {
+        const labels = ["نام", "نام‌خانوادگی", "درمانگر", "شماره", "تاریخ", "ساعت", "عملیات"];
+        [...document.querySelectorAll("#tableBody tr")].forEach(tr => {
+            const tds = tr.querySelectorAll("td");
+            tds.forEach((td, i) => {
+                td.setAttribute("data-label", labels[i] || "");
+            });
+        });
+    }
+
+    applyMobileLabels();
 </script>
 
 </body>
